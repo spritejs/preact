@@ -11,6 +11,7 @@ export default {
 		sourcemap: true,
 		strict: true
 	},
+	external: ['spritejs'],
 	plugins: [
 		memory({
 			path: 'src/preact.js',

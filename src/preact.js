@@ -4,9 +4,15 @@ import { Component } from './component';
 import { render } from './render';
 import { rerender } from './render-queue';
 import options from './options';
+import { use } from './dom';
 
 function createRef() {
 	return {};
+}
+
+if (typeof spritejs !== 'undefined') {
+	/* global spritejs */
+	use(spritejs);
 }
 
 export default {

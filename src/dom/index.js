@@ -2,6 +2,11 @@ import { IS_NON_DIMENSIONAL } from '../constants';
 import { applyRef } from '../util';
 import options from '../options';
 
+let spritejs = null;
+export function use(context) {
+	spritejs = context;
+}
+
 /**
  * A DOM event listener
  * @typedef {(e: Event) => void} EventListner
@@ -26,20 +31,55 @@ import options from '../options';
  * @typedef {Element & ElementCSSInlineStyle & PreactElementExtensions} PreactElement
  */
 
+const isBrowser = typeof window !== 'undefined' && window.document && window.document.documentElement;
+
 /**
  * Create an element with the given nodeName.
  * @param {string} nodeName The DOM node to create
+ * @param {Object} attrs The vnode attributes
  * @param {boolean} [isSvg=false] If `true`, creates an element within the SVG
  *  namespace.
  * @returns {PreactElement} The created DOM node
  */
-export function createNode(nodeName, isSvg) {
+export function createNode(nodeName, attrs, isSvg) {
+	if (!spritejs) throw new Error('No spritejs context.');
+	const isValidNodeType = spritejs.isValidNodeType;
+	const createSpriteNode = spritejs.createNode;
+
 	/** @type {PreactElement} */
-	let node = isSvg ? document.createElementNS('http://www.w3.org/2000/svg', nodeName) : document.createElement(nodeName);
-	node.normalizedNodeName = nodeName;
+	let node = null;
+	const isSpriteNode = isValidNodeType(nodeName) && (nodeName !== 'label' || attrs.text != null);
+
+	if (isSpriteNode && nodeName === 'scene') {
+		if (isBrowser) {
+			const elm = document.createElement('div');
+			if (attrs.id) elm.id = attrs.id;
+			attrs.resolution = attrs.resolution || 'flex';
+			node = createSpriteNode('scene', elm, attrs);
+		} else {
+			node = createSpriteNode('scene', `#${attrs.id}` || '#default', attrs);
+		}
+		if (attrs.resources) {
+			const resources = attrs.resources;
+			node.preload(...resources).then(() => {
+				node.dispatchEvent('load', { resources });
+			});
+		}
+	} else if (isSpriteNode) {
+		attrs = Object.assign({}, attrs);
+		Object.keys(attrs).forEach((key) => {
+			// ignore events
+			if (key.indexOf('on') === 0) {
+				delete attrs[key];
+			}
+		});
+		node = createSpriteNode(nodeName, attrs);
+	} else if (isBrowser) {
+		node = isSvg ? document.createElementNS('http://www.w3.org/2000/svg', nodeName) : document.createElement(nodeName);
+		node.normalizedNodeName = nodeName;
+	}
 	return node;
 }
-
 
 /**
  * Remove a child node from its parent if attached.
@@ -48,8 +88,46 @@ export function createNode(nodeName, isSvg) {
 export function removeNode(node) {
 	let parentNode = node.parentNode;
 	if (parentNode) parentNode.removeChild(node);
+	else if (node.container && node.container.nodeType === 1) {
+		// remove scene
+		node.container.remove();
+	}
 }
 
+export function appendNode(parent, node) {
+	if (node.container && node.container.nodeType === 1) {
+		const ret = parent.appendChild(node.container);
+		node.parent = parent;
+		if (node.updateResolution) {
+			setTimeout(() => {
+				node.updateResolution();
+				node.updateViewport();
+			});
+		}
+		return ret;
+	}
+	return parent.appendChild(node);
+}
+
+export function replaceNode(newNode, oldNode) {
+	if (newNode.container && newNode.container.nodeType === 1) {
+		newNode = newNode.container;
+	}
+	if (oldNode.container && oldNode.container.nodeType === 1) {
+		oldNode = oldNode.container;
+	}
+	return oldNode.parentNode.replaceNode(newNode, oldNode);
+}
+
+export function insertBefore(parent, newNode, refNode) {
+	if (newNode.container && newNode.container.nodeType === 1) {
+		newNode = newNode.container;
+	}
+	if (refNode.container && refNode.container.nodeType === 1) {
+		refNode = refNode.container;
+	}
+	return parent.insertBefore(newNode, refNode);
+}
 
 /**
  * Set a named attribute on the given Node, with special behavior for some names

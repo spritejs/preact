@@ -1,11 +1,10 @@
 import { ATTR_KEY } from '../constants';
 import { isSameNodeType, isNamedNode } from './index';
 import { buildComponentFromVNode } from './component';
-import { createNode, setAccessor } from '../dom/index';
 import { unmountComponent } from './component';
 import options from '../options';
 import { applyRef } from '../util';
-import { removeNode } from '../dom/index';
+import {  createNode, setAccessor, removeNode, appendNode, replaceNode, insertBefore } from '../dom/index';
 
 /**
  * Queue of components that have been mounted and are awaiting componentDidMount
@@ -59,7 +58,7 @@ export function diff(dom, vnode, context, mountAll, parent, componentRoot) {
 	let ret = idiff(dom, vnode, context, mountAll, componentRoot);
 
 	// append the element if its a new parent
-	if (parent && ret.parentNode!==parent) parent.appendChild(ret);
+	if (parent && ret.parentNode!==parent) appendNode(parent, ret);
 
 	// diffLevel being reduced to 0 means we're exiting the diff
 	if (!--diffLevel) {
@@ -99,11 +98,11 @@ function idiff(dom, vnode, context, mountAll, componentRoot) {
 				dom.nodeValue = vnode;
 			}
 		}
-		else {
+		else if (typeof document !== 'undefined') {
 			// it wasn't a Text node: replace it with one and recycle the old Element
 			out = document.createTextNode(vnode);
 			if (dom) {
-				if (dom.parentNode) dom.parentNode.replaceChild(out, dom);
+				if (dom.parentNode) replaceNode(out, dom);
 				recollectNodeTree(dom, true);
 			}
 		}
@@ -128,14 +127,14 @@ function idiff(dom, vnode, context, mountAll, componentRoot) {
 	// If there's no existing element or it's the wrong type, create a new one:
 	vnodeName = String(vnodeName);
 	if (!dom || !isNamedNode(dom, vnodeName)) {
-		out = createNode(vnodeName, isSvgMode);
+		out = createNode(vnodeName, vnode.attributes, isSvgMode);
 
 		if (dom) {
 			// move children into the replacement node
-			while (dom.firstChild) out.appendChild(dom.firstChild);
+			while (dom.childNodes[0]) appendNode(out, dom.childNodes[0]);
 
 			// if the previous Element was mounted into the DOM, replace it inline
-			if (dom.parentNode) dom.parentNode.replaceChild(out, dom);
+			if (dom.parentNode) replaceNode(out, dom);
 
 			// recycle the old element (skips non-Element node types)
 			recollectNodeTree(dom, true);
@@ -143,13 +142,20 @@ function idiff(dom, vnode, context, mountAll, componentRoot) {
 	}
 
 
-	let fc = out.firstChild,
+	let fc = out.childNodes && out.childNodes[0],
 		props = out[ATTR_KEY],
 		vchildren = vnode.children;
 
 	if (props==null) {
 		props = out[ATTR_KEY] = {};
-		for (let a=out.attributes, i=a.length; i--; ) props[a[i].name] = a[i].value;
+		if (out.nodeType === 1 || out.container && out.container.nodeType === 1) {
+			const attributes = (out.nodeType !== 1 && out.container) ? out.container.attributes : out.attributes;
+			for (let a=attributes, i=a.length; i--; ) props[a[i].name] = a[i].value;
+		} else {
+			[...out.attributes.__attributesSet].forEach((name) => {
+				props[name] = out.attributes[name];
+			});
+		}
 	}
 
 	// Optimization: fast-path for elements containing a single TextNode:
@@ -245,13 +251,13 @@ function innerDiffNode(dom, vchildren, context, mountAll, isHydrating) {
 			f = originalChildren[i];
 			if (child && child!==dom && child!==f) {
 				if (f==null) {
-					dom.appendChild(child);
+					appendNode(dom, child);
 				}
 				else if (child===f.nextSibling) {
 					removeNode(f);
 				}
 				else {
-					dom.insertBefore(child, f);
+					insertBefore(dom, child, f);
 				}
 			}
 		}
@@ -304,7 +310,7 @@ export function recollectNodeTree(node, unmountOnly) {
  *	- it's also cheaper than accessing the .childNodes Live NodeList
  */
 export function removeChildren(node) {
-	node = node.lastChild;
+	node = node.childNodes && node.childNodes[node.childNodes.length - 1];
 	while (node) {
 		let next = node.previousSibling;
 		recollectNodeTree(node, true);
