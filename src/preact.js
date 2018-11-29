@@ -17,6 +17,7 @@ if (typeof spritejs !== 'undefined') {
 
 export default {
 	h,
+	use,
 	createElement,
 	cloneElement,
 	createRef,
@@ -28,6 +29,7 @@ export default {
 
 export {
 	h,
+	use,
 	createElement,
 	cloneElement,
 	createRef,
